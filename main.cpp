@@ -4,11 +4,13 @@
 #include <iostream>
 #include <iterator>
 #include <SFML/Graphics.hpp>
+#include <fmt/format.h>
 
 using std::array;
 using std::fill;
 using u8 = uint8_t;
 using u16 = uint16_t;
+using fmt::print;
 
 class Chip8
 {
@@ -24,7 +26,7 @@ class Chip8
     array<u8, 16> key;      //keyboard
 
 public:
-    Chip8() : PC(0x200), I(0), SP(0), DT(0), ST(0)
+    Chip8() : PC(0x200), SP(0), I(0), DT(0), ST(0)
     {
         fill(begin(V), end(V), 0);
         fill(begin(memory), end(memory), 0);
@@ -57,24 +59,48 @@ public:
     void load_program(const std::string &filename)
     {
         std::ifstream file(filename, std::ios::binary);
-
-        std::vector<u8> buffer((std::istreambuf_iterator<char>(file)),
-                               {});
+        std::vector<u8> buffer((std::istreambuf_iterator<char>(file)), {});
         std::copy(begin(buffer), end(buffer), begin(memory) + 0x200);
+    }
+
+    void cycle()
+    {
+        // Fetch Opcode
+        auto opcode = memory[PC] << 8 | memory[PC + 1];
+        print("{:x} at {:x}\n", opcode, PC);
+
+        // Decode Opcode
+        // Execute Opcode
+        PC += 2;
+
+        // Update timers
+        if (DT > 0)
+            --DT;
+
+        if (ST > 0)
+        {
+            if (ST == 1)
+                printf("BEEP!\n");
+            --ST;
+        }
     }
 };
 
 int main()
 {
-
+    print("Chip8 emulator by tomgrad (doctor8bit)\n");
     Chip8 emu;
     emu.load_program("roms/ParticleDemo.ch8");
-    // emu.load_program("roms/test.ch8");
+
+    for (int i = 0; i < 16; ++i)
+    {
+        emu.cycle();
+    }
 
     // const auto width = 64u;
     // const auto height = 32u;
 
-    // sf::RenderWindow window(sf::VideoMode(640, 320), "SFML works!");
+    // sf::RenderWindow window(sf::VideoMode(640, 320), "Chip8");
 
     // sf::Texture fb;
     // fb.create(width, height);
