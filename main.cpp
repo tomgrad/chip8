@@ -6,6 +6,7 @@
 #include <SFML/Graphics.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <random>
 
 using std::array;
 using std::fill;
@@ -25,6 +26,7 @@ class Chip8
     u8 DT;                  // delay timer
     u8 ST;                  // sound timer
     array<u8, 16> key;      //keyboard
+    std::default_random_engine rng;
 
 public:
     Chip8() : PC(0x200), SP(0), I(0), DT(0), ST(0)
@@ -72,6 +74,12 @@ public:
         return prev == 0xff && gfx[pos] == 0;
     }
 
+    u8 random_byte()
+    {
+        std::uniform_int_distribution<u8> distribution(0, 0xff);
+        return distribution(rng);
+    }
+
     void cycle()
     {
         // Fetch Opcode
@@ -87,6 +95,16 @@ public:
         switch (opcode & 0xf000)
         {
 
+        case 0x0000:
+            switch (opcode & 0x00ff)
+            {
+            case 0xee: // RET
+                PC = stack[--SP];
+                break;
+            }
+
+            break;
+
         case 0x1000: // JP addr
             PC = opcode & 0x0fff;
             break;
@@ -97,36 +115,57 @@ public:
             break;
 
         case 0x6000: // LD Vx, byte
-            V[(opcode & 0x0f00 >> 8)] = (opcode & 0x00ff);
+            V[(opcode & 0x0f00 >> 8)] = opcode & 0x00ff;
+            PC += 2;
+            break;
+
+        case 0x7000: // ADD Vx, byte
+            V[opcode & 0x0f00 >> 8] += opcode & 0x00ff;
             PC += 2;
             break;
 
         case 0x8000: // 0x8xyn
+        {
+            u8 x = opcode & 0x0f00 >> 8;
+            u8 y = opcode & 0x00f0 >> 4;
+
             switch (opcode & 0x000f)
             {
             case 0x0: // LD Vx, Vy
                 V[opcode & 0x0f00 >> 8] = V[opcode & 0x00f0 >> 4];
                 break;
 
+            case 0x2: // AND Vx, Vy
+                V[x] &= V[y];
+                break;
+
             case 0x4: //ADD Vx, Vy
             {
-                u8 x = opcode & 0x0f00 >> 8;
-                u8 y = opcode & 0x00f0 >> 4;
                 u16 sum = x + y;
                 V[x] = sum & 0x00ff;
                 V[0xf] = sum & 0xff00 ? 1 : 0;
             }
-
             break;
+
+            case 0xe: //SHL Vx {, Vy}
+                V[0xf] = V[x] >> 7;
+                V[x] <<= 1;
+                break;
             default:
                 panic();
             }
+        }
             PC += 2;
 
             break;
 
         case 0xa000: // LD I, addr
             I = opcode & 0x0fff;
+            PC += 2;
+            break;
+
+        case 0xc000: // RND Vx, byte
+            V[opcode & 0x0f00 >> 8] = random_byte() & (opcode & 0x00ff);
             PC += 2;
             break;
 
