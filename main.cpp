@@ -22,13 +22,13 @@ class Chip8
     u16 I;           // addr. register
     array<u8, 4096> memory;
     array<u16, 16> stack;
-    array<u8, 64 * 32> gfx; // display
-    u8 DT;                  // delay timer
-    u8 ST;                  // sound timer
-    array<u8, 16> key;      //keyboard
+    u8 DT;             // delay timer
+    u8 ST;             // sound timer
+    array<u8, 16> key; //keyboard
     std::default_random_engine rng;
 
 public:
+    array<u8, 64 * 32> gfx; // display
     Chip8() : PC(0x200), SP(0), I(0), DT(0), ST(0)
     {
         fill(begin(V), end(V), 0);
@@ -227,51 +227,49 @@ public:
 int main()
 {
     print("Chip8 emulator by tomgrad (doctor8bit)\n");
+    const auto width = 64u;
+    const auto height = 32u;
+
     Chip8 emu;
     emu.load_program("roms/ParticleDemo.ch8");
+    sf::RenderWindow window(sf::VideoMode(640, 320), "Chip8");
+    sf::Texture fb;
+    fb.create(width, height);
 
-    while (true)
+    // while (true)
+    //     emu.cycle();
+
+    sf::Sprite display;
+    display.scale(10, 10);
+    display.setTexture(fb);
+    auto pixels = new sf::Uint8[width * height * 4];
+
+    auto update = [&] {
+        for (size_t i = 0; i < width * height; ++i)
+        {
+            pixels[i << 2] = 0;
+            pixels[(i << 2) + 1] = emu.gfx[i] ? 255 : 0;
+            pixels[(i << 2) + 2] = 0;
+            pixels[(i << 2) + 3] = 255;
+        }
+        fb.update(pixels);
+    };
+
+    while (window.isOpen())
+    {
+        sf::Event event;
+        while (window.pollEvent(event))
+        {
+            if (event.type == sf::Event::Closed)
+                window.close();
+        }
+
         emu.cycle();
-
-    // const auto width = 64u;
-    // const auto height = 32u;
-
-    // sf::RenderWindow window(sf::VideoMode(640, 320), "Chip8");
-
-    // sf::Texture fb;
-    // fb.create(width, height);
-
-    // auto pixels = new sf::Uint8[width * height * 4];
-
-    // auto color = 0;
-
-    // for (auto i = 0; i < width * height * 4; ++i)
-    //     pixels[i] = (++i) % 0xff;
-
-    // fb.update(pixels);
-
-    // sf::Sprite display;
-    // display.scale(10, 10);
-
-    // display.setTexture(fb);
-    // while (window.isOpen())
-    // {
-    //     sf::Event event;
-    //     while (window.pollEvent(event))
-    //     {
-    //         if (event.type == sf::Event::Closed)
-    //             window.close();
-    //     }
-
-    //     window.clear();
-
-    //     for (auto i = 3; i < width * height * 4; i += 4)
-    //         ++pixels[i];
-    //     fb.update(pixels);
-
-    //     window.draw(display);
-    //     window.display();
-    // }
+        window.clear();
+        update();
+        window.draw(display);
+        window.display();
+    }
 
     return 0;
 }
