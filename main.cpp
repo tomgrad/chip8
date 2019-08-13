@@ -7,6 +7,8 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <random>
+#include <numeric>
+#include <valarray>
 
 using std::array;
 using std::fill;
@@ -31,11 +33,11 @@ public:
     array<u8, 64 * 32> gfx; // display
     Chip8() : PC(0x200), SP(0), I(0), DT(0), ST(0)
     {
-        fill(begin(V), end(V), 0);
-        fill(begin(memory), end(memory), 0);
-        fill(begin(stack), end(stack), 0);
-        fill(begin(gfx), end(gfx), 0);
-        fill(begin(key), end(key), 0);
+        std::fill(begin(V), end(V), 0);
+        std::fill(begin(memory), end(memory), 0);
+        std::fill(begin(stack), end(stack), 0);
+        std::fill(begin(gfx), end(gfx), 0);
+        std::fill(begin(key), end(key), 0);
 
         array<u8, 80> charset{
             0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -68,7 +70,7 @@ public:
 
     bool put_pixel(u8 x, u8 y)
     {
-        auto pos = (x + y * 64);
+        auto pos = (y * 64 + x);
         auto prev = gfx[pos];
         gfx[pos] ^= 0xff;
         return prev == 0xff && gfx[pos] == 0;
@@ -84,7 +86,7 @@ public:
     {
         // Fetch Opcode
         auto opcode = memory[PC] << 8 | memory[PC + 1];
-        print("{:x} at {:x}\n", opcode, PC);
+        // print("{:x} at {:x}\Bn", opcode, PC);
         auto panic = [&] {
             print("Panic! Unknown opcode {:x} at PC {:x}\n", opcode, PC);
             exit(1);
@@ -99,7 +101,7 @@ public:
             switch (opcode & 0x00ff)
             {
             case 0xee: // RET
-                PC = stack[--SP];
+                PC = stack[--SP] + 2;
                 break;
             }
 
@@ -114,25 +116,37 @@ public:
             PC = opcode & 0x0fff;
             break;
 
+        case 0x3000: // SE Vx, byte
+            PC += V[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff) ? 4 : 2;
+            break;
+
+        case 0x4000: // SnE Vx, byte
+            PC += V[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff) ? 2 : 4;
+            break;
+
+        case 0x5000: // SE Vx, Vy
+            PC += V[(opcode & 0x0f00) >> 8] == V[(opcode & 0x00f0) >> 4] ? 4 : 2;
+            break;
+
         case 0x6000: // LD Vx, byte
-            V[(opcode & 0x0f00 >> 8)] = opcode & 0x00ff;
+            V[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
             PC += 2;
             break;
 
         case 0x7000: // ADD Vx, byte
-            V[opcode & 0x0f00 >> 8] += opcode & 0x00ff;
+            V[(opcode & 0x0f00) >> 8] += opcode & 0x00ff;
             PC += 2;
             break;
 
         case 0x8000: // 0x8xyn
         {
-            u8 x = opcode & 0x0f00 >> 8;
-            u8 y = opcode & 0x00f0 >> 4;
+            u8 x = (opcode & 0x0f00) >> 8;
+            u8 y = (opcode & 0x00f0) >> 4;
 
             switch (opcode & 0x000f)
             {
             case 0x0: // LD Vx, Vy
-                V[opcode & 0x0f00 >> 8] = V[opcode & 0x00f0 >> 4];
+                V[(opcode & 0x0f00) >> 8] = V[(opcode & 0x00f0) >> 4];
                 break;
 
             case 0x2: // AND Vx, Vy
@@ -141,11 +155,16 @@ public:
 
             case 0x4: //ADD Vx, Vy
             {
-                u16 sum = x + y;
+                u16 sum = V[x] + V[y];
                 V[x] = sum & 0x00ff;
                 V[0xf] = sum & 0xff00 ? 1 : 0;
             }
             break;
+
+            case 0x6: //SHR Vx {, Vy}
+                V[0xf] = V[x] & 1;
+                V[x] >>= 1;
+                break;
 
             case 0xe: //SHL Vx {, Vy}
                 V[0xf] = V[x] >> 7;
@@ -165,22 +184,25 @@ public:
             break;
 
         case 0xc000: // RND Vx, byte
-            V[opcode & 0x0f00 >> 8] = random_byte() & (opcode & 0x00ff);
+            V[(opcode & 0x0f00) >> 8] = random_byte() & (opcode & 0x00ff);
             PC += 2;
             break;
 
         case 0xd000: // DRW Vx, Vy, nibble
         {
-            u8 x0 = opcode & 0x0f00 >> 8;
-            u8 y0 = opcode & 0x00f0 >> 4;
+            u8 x0 = V[(opcode & 0x0f00) >> 8];
+            u8 y0 = V[(opcode & 0x00f0) >> 4];
             u8 n = opcode & 0x000f;
-            u8 line = 0;
-            for (auto it = begin(memory) + I; it != begin(memory) + I + n; ++it, ++line)
+            for (u8 y = 0; y < n; ++y)
             {
-                u8 y = y0 + line;
-                for (u8 x = x0; x < x0 + 8; ++x)
-                    if (put_pixel(x % 64, y % 32))
-                        V[0xf] = 1;
+                auto line = memory[I + y];
+                for (u8 x = 0; x < 8; ++x)
+                {
+                    if (line & 1 << 7)
+                        if (put_pixel((x0 + x) % 64, (y0 + y) % 32))
+                            V[0xf] = 1;
+                    line <<= 1;
+                }
             }
         }
 
@@ -190,13 +212,16 @@ public:
         case 0xf000:
             switch (opcode & 0x00ff)
             {
-
             case 0x1e: // ADD I, Vx
-                I += V[opcode & 0x0f00 >> 8];
+                I += V[(opcode & 0x0f00) >> 8];
+                break;
+
+            case 0x55: //Fx65 - LD [I], Vx
+                std::copy(begin(V), begin(V) + 1 + ((opcode & 0x0f00) >> 8), begin(memory) + I);
                 break;
 
             case 0x65: //Fx65 - LD Vx, [I]
-                std::copy(begin(memory) + I, begin(memory) + I + 1 + (opcode & 0x0f00 >> 8), begin(V));
+                std::copy(begin(memory) + I, begin(memory) + I + 1 + ((opcode & 0x0f00) >> 8), begin(V));
                 break;
             default:
                 panic();
@@ -221,39 +246,35 @@ public:
     }
 };
 
-#include <numeric>
-#include <valarray>
-
 int main()
 {
     print("Chip8 emulator by tomgrad (doctor8bit)\n");
     const auto width = 64u;
     const auto height = 32u;
+    const auto scale = 5u;
 
     Chip8 emu;
     emu.load_program("roms/ParticleDemo.ch8");
-    sf::RenderWindow window(sf::VideoMode(640, 320), "Chip8");
+    sf::RenderWindow window(sf::VideoMode(width * scale, height * scale), "Chip8", sf::Style::Close);
     sf::Texture fb;
     fb.create(width, height);
 
-    // while (true)
-    //     emu.cycle();
-
     sf::Sprite display;
-    display.scale(10, 10);
+
     display.setTexture(fb);
     auto pixels = new sf::Uint8[width * height * 4];
 
     auto update = [&] {
         for (size_t i = 0; i < width * height; ++i)
         {
-            pixels[i << 2] = 0;
-            pixels[(i << 2) + 1] = emu.gfx[i] ? 255 : 0;
-            pixels[(i << 2) + 2] = 0;
-            pixels[(i << 2) + 3] = 255;
+            pixels[4 * i] = 0;
+            pixels[4 * i + 1] = emu.gfx[i];
+            pixels[4 * i + 2] = 0;
+            pixels[4 * i + 3] = 255;
         }
         fb.update(pixels);
     };
+    display.setScale(scale, scale);
 
     while (window.isOpen())
     {
