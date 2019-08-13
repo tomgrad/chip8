@@ -24,13 +24,13 @@ class Chip8
     u16 I;           // addr. register
     array<u8, 4096> memory;
     array<u16, 16> stack;
-    u8 DT;             // delay timer
-    u8 ST;             // sound timer
-    array<u8, 16> key; //keyboard
+    u8 DT; // delay timer
+    u8 ST; // sound timer
     std::default_random_engine rng;
 
 public:
     array<u8, 64 * 32> gfx; // display
+    array<u8, 16> key;      //keyboard
     Chip8() : PC(0x200), SP(0), I(0), DT(0), ST(0)
     {
         std::fill(begin(V), end(V), 0);
@@ -86,9 +86,9 @@ public:
     {
         // Fetch Opcode
         auto opcode = memory[PC] << 8 | memory[PC + 1];
-        // print("{:x} at {:x}\Bn", opcode, PC);
+        // print("{:x} at {:x}\n", opcode, PC);
         auto panic = [&] {
-            print("Panic! Unknown opcode {:x} at PC {:x}\n", opcode, PC);
+            print("{:x} unknown. Panic at PC {:x}\n", opcode, PC);
             exit(1);
         };
 
@@ -103,6 +103,12 @@ public:
             case 0xee: // RET
                 PC = stack[--SP] + 2;
                 break;
+            case 0xe0: // CLS
+                std::fill(begin(gfx), end(gfx), 0);
+                PC += 2;
+                break;
+            default:
+                panic();
             }
 
             break;
@@ -209,6 +215,19 @@ public:
             PC += 2;
             break;
 
+        case 0xE000:
+            switch (opcode & 0x00ff)
+            {
+            case 0x9e: // SKP Vx
+                PC += key[V[(opcode & 0x0f00) >> 8]] ? 4 : 2;
+                break;
+            case 0xa1: // SKNP Vx
+                PC += key[V[(opcode & 0x0f00) >> 8]] ? 2 : 4;
+                break;
+            default:
+                panic();
+            }
+            break;
         case 0xf000:
             switch (opcode & 0x00ff)
             {
@@ -254,7 +273,7 @@ int main()
     const auto scale = 5u;
 
     Chip8 emu;
-    emu.load_program("roms/ParticleDemo.ch8");
+    emu.load_program("roms/Framed_MK2.ch8");
     sf::RenderWindow window(sf::VideoMode(width * scale, height * scale), "Chip8", sf::Style::Close);
     sf::Texture fb;
     fb.create(width, height);
@@ -263,6 +282,24 @@ int main()
 
     display.setTexture(fb);
     auto pixels = new sf::Uint8[width * height * 4];
+
+    const std::map<sf::Keyboard::Key, u8> bindings = {
+        {sf::Keyboard::Num0, 0},
+        {sf::Keyboard::Num1, 1},
+        {sf::Keyboard::Num2, 2},
+        {sf::Keyboard::Num3, 3},
+        {sf::Keyboard::Num4, 4},
+        {sf::Keyboard::Num5, 5},
+        {sf::Keyboard::Num6, 6},
+        {sf::Keyboard::Num7, 7},
+        {sf::Keyboard::Num8, 8},
+        {sf::Keyboard::Num9, 9},
+        {sf::Keyboard::A, 10},
+        {sf::Keyboard::B, 11},
+        {sf::Keyboard::C, 12},
+        {sf::Keyboard::D, 13},
+        {sf::Keyboard::E, 14},
+        {sf::Keyboard::F, 15}};
 
     auto update = [&] {
         for (size_t i = 0; i < width * height; ++i)
@@ -283,7 +320,17 @@ int main()
         {
             if (event.type == sf::Event::Closed)
                 window.close();
+
+            if (event.type == sf::Event::KeyPressed)
+            {
+                if (event.key.code == sf::Keyboard::Escape)
+                    window.close();
+            }
         }
+
+        for (auto const &[key, val] : bindings)
+            emu.key[val] =
+                sf::Keyboard::isKeyPressed(key) ? 1 : 0;
 
         emu.cycle();
         window.clear();

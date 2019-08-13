@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/Debug/main",
+            "program": "${workspaceFolder}/Debug/chip8",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
