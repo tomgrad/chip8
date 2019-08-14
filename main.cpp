@@ -229,22 +229,38 @@ public:
             }
             break;
         case 0xf000:
+        {
+            u8 x = (opcode & 0x0f00) >> 8;
             switch (opcode & 0x00ff)
             {
-            case 0x1e: // ADD I, Vx
-                I += V[(opcode & 0x0f00) >> 8];
+
+            case 0x07: //LD Vx, DT
+                V[x] = DT;
                 break;
 
+            case 0x15: // LD DT, Vx
+                DT = V[x];
+                break;
+            case 0x1e: // ADD I, Vx
+                I += V[x];
+                break;
+
+                // Fx33 - LD B, Vx
+                // Store BCD representation of Vx in memory locations I, I+1, and I+2.
+
+                // The interpreter takes the decimal value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.
+
             case 0x55: //Fx65 - LD [I], Vx
-                std::copy(begin(V), begin(V) + 1 + ((opcode & 0x0f00) >> 8), begin(memory) + I);
+                std::copy(begin(V), begin(V) + 1 + x, begin(memory) + I);
                 break;
 
             case 0x65: //Fx65 - LD Vx, [I]
-                std::copy(begin(memory) + I, begin(memory) + I + 1 + ((opcode & 0x0f00) >> 8), begin(V));
+                std::copy(begin(memory) + I, begin(memory) + I + 1 + x, begin(V));
                 break;
             default:
                 panic();
             }
+        }
             PC += 2;
             break;
 
@@ -265,15 +281,20 @@ public:
     }
 };
 
-int main()
+int main(int argc, char **argv)
 {
+    if (argc == 1)
+    {
+        print("Usage: chip8 rom.ch8\n");
+        exit(0);
+    }
     print("Chip8 emulator by tomgrad (doctor8bit)\n");
     const auto width = 64u;
     const auto height = 32u;
     const auto scale = 5u;
 
     Chip8 emu;
-    emu.load_program("roms/Framed_MK2.ch8");
+    emu.load_program(argv[1]);
     sf::RenderWindow window(sf::VideoMode(width * scale, height * scale), "Chip8", sf::Style::Close);
     sf::Texture fb;
     fb.create(width, height);
