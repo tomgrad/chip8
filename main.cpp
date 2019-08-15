@@ -86,6 +86,9 @@ public:
     {
         // Fetch Opcode
         auto opcode = memory[PC] << 8 | memory[PC + 1];
+        u8 x = (opcode & 0x0f00) >> 8;
+        u8 y = (opcode & 0x00f0) >> 4;
+
         // print("{:x} at {:x}\n", opcode, PC);
         auto panic = [&] {
             print("{:x} unknown. Panic at PC {:x}\n", opcode, PC);
@@ -123,40 +126,45 @@ public:
             break;
 
         case 0x3000: // SE Vx, byte
-            PC += V[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff) ? 4 : 2;
+            PC += V[x] == (opcode & 0x00ff) ? 4 : 2;
             break;
 
         case 0x4000: // SnE Vx, byte
-            PC += V[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff) ? 2 : 4;
+            PC += V[x] == (opcode & 0x00ff) ? 2 : 4;
             break;
 
         case 0x5000: // SE Vx, Vy
-            PC += V[(opcode & 0x0f00) >> 8] == V[(opcode & 0x00f0) >> 4] ? 4 : 2;
+            PC += V[x] == V[y] ? 4 : 2;
             break;
 
         case 0x6000: // LD Vx, byte
-            V[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
+            V[x] = opcode & 0x00ff;
             PC += 2;
             break;
 
         case 0x7000: // ADD Vx, byte
-            V[(opcode & 0x0f00) >> 8] += opcode & 0x00ff;
+            V[x] += opcode & 0x00ff;
             PC += 2;
             break;
 
         case 0x8000: // 0x8xyn
-        {
-            u8 x = (opcode & 0x0f00) >> 8;
-            u8 y = (opcode & 0x00f0) >> 4;
 
             switch (opcode & 0x000f)
             {
             case 0x0: // LD Vx, Vy
-                V[(opcode & 0x0f00) >> 8] = V[(opcode & 0x00f0) >> 4];
+                V[x] = V[y];
+                break;
+
+            case 0x1: // OR Vx, Vy
+                V[x] |= V[y];
                 break;
 
             case 0x2: // AND Vx, Vy
                 V[x] &= V[y];
+                break;
+
+            case 0x3: // XOR Vx, Vy
+                V[x] ^= V[y];
                 break;
 
             case 0x4: //ADD Vx, Vy
@@ -179,10 +187,16 @@ public:
             default:
                 panic();
             }
-        }
+
             PC += 2;
 
             break;
+
+        case 0x9000: //SNE Vx, Vy
+        {
+            PC += V[x] == V[y] ? 2 : 4;
+        }
+        break;
 
         case 0xa000: // LD I, addr
             I = opcode & 0x0fff;
@@ -190,22 +204,21 @@ public:
             break;
 
         case 0xc000: // RND Vx, byte
-            V[(opcode & 0x0f00) >> 8] = random_byte() & (opcode & 0x00ff);
+            V[x] = random_byte() & (opcode & 0x00ff);
             PC += 2;
             break;
 
         case 0xd000: // DRW Vx, Vy, nibble
         {
-            u8 x0 = V[(opcode & 0x0f00) >> 8];
-            u8 y0 = V[(opcode & 0x00f0) >> 4];
+            V[0xf] = 0;
             u8 n = opcode & 0x000f;
-            for (u8 y = 0; y < n; ++y)
+            for (u8 yi = 0; yi < n; ++yi)
             {
-                auto line = memory[I + y];
-                for (u8 x = 0; x < 8; ++x)
+                auto line = memory[I + yi];
+                for (u8 xi = 0; xi < 8; ++xi)
                 {
-                    if (line & 1 << 7)
-                        if (put_pixel((x0 + x) % 64, (y0 + y) % 32))
+                    if (line >> 7)
+                        if (put_pixel((xi + V[x]) % 64, (yi + V[y]) % 32))
                             V[0xf] = 1;
                     line <<= 1;
                 }
@@ -219,22 +232,20 @@ public:
             switch (opcode & 0x00ff)
             {
             case 0x9e: // SKP Vx
-                PC += key[V[(opcode & 0x0f00) >> 8]] ? 4 : 2;
+                PC += key[V[x]] ? 4 : 2;
                 break;
             case 0xa1: // SKNP Vx
-                PC += key[V[(opcode & 0x0f00) >> 8]] ? 2 : 4;
+                PC += key[V[x]] ? 2 : 4;
                 break;
             default:
                 panic();
             }
             break;
         case 0xf000:
-        {
-            u8 x = (opcode & 0x0f00) >> 8;
             switch (opcode & 0x00ff)
             {
 
-            case 0x07: //LD Vx, DT
+            case 0x07: // LD Vx, DT
                 V[x] = DT;
                 break;
 
@@ -245,22 +256,32 @@ public:
                 I += V[x];
                 break;
 
-                // Fx33 - LD B, Vx
-                // Store BCD representation of Vx in memory locations I, I+1, and I+2.
+            case 0x29: // LD F, Vx
+                I = V[x] * 5;
+                break;
 
-                // The interpreter takes the decimal value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.
+            case 0x33: // LD B, Vx
+            {
+                u8 d2 = V[x] / 100;
+                u8 d1 = (V[x] - d2 * 100) / 10;
+                u8 d0 = V[x] - d2 * 100 - d1 * 10;
 
-            case 0x55: //Fx65 - LD [I], Vx
-                std::copy(begin(V), begin(V) + 1 + x, begin(memory) + I);
+                memory[I] = d2;
+                memory[I + 1] = d1;
+                memory[I + 2] = d0;
+            }
+            break;
+
+            case 0x55: //Fx55 - LD [I], Vx
+                std::copy(begin(V), begin(V) + x + 1, begin(memory) + I);
                 break;
 
             case 0x65: //Fx65 - LD Vx, [I]
-                std::copy(begin(memory) + I, begin(memory) + I + 1 + x, begin(V));
+                std::copy(begin(memory) + I, begin(memory) + I + x + 1, begin(V));
                 break;
             default:
                 panic();
             }
-        }
             PC += 2;
             break;
 
