@@ -175,9 +175,19 @@ public:
             }
             break;
 
+            case 0x5: // SUB Vx, Vy
+                V[0xf] = V[x] > V[y] ? 1 : 0;
+                V[x] -= V[y];
+                break;
+
             case 0x6: //SHR Vx {, Vy}
                 V[0xf] = V[x] & 1;
                 V[x] >>= 1;
+                break;
+
+            case 0x7: // SUBN Vx, Vy
+                V[0xf] = V[y] > V[x] ? 1 : 0;
+                V[x] = V[y] - V[x];
                 break;
 
             case 0xe: //SHL Vx {, Vy}
@@ -202,6 +212,9 @@ public:
             I = opcode & 0x0fff;
             PC += 2;
             break;
+
+        case 0xb000: // JP V0, addr
+            PC = V[0] + (opcode & 0x0fff);
 
         case 0xc000: // RND Vx, byte
             V[x] = random_byte() & (opcode & 0x00ff);
@@ -249,9 +262,19 @@ public:
                 V[x] = DT;
                 break;
 
+                // Fx0A - LD Vx, K
+                // Wait for a key press, store the value of the key in Vx.
+
+                // All execution stops until a key is pressed, then the value of that key is stored in Vx.
+
             case 0x15: // LD DT, Vx
                 DT = V[x];
                 break;
+
+            case 0x18: //LD ST, Vx
+                ST = V[x];
+                break;
+
             case 0x1e: // ADD I, Vx
                 I += V[x];
                 break;
